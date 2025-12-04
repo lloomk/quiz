@@ -14,15 +14,11 @@
         h1, h2 { text-align: center; color: #1e293b; margin-bottom: 10px; }
         
         /* Inputs & Buttons */
-        .input-group { display: flex; gap: 10px; margin-bottom: 15px; }
         input, textarea { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
         .btn { display: block; width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: bold; margin-top: 10px; transition: 0.2s; }
         .btn:hover { opacity: 0.9; }
         .btn-outline { background: transparent; border: 2px solid var(--primary); color: var(--primary); margin-top: 5px; }
         
-        /* Bulk Paste */
-        textarea { height: 100px; font-family: monospace; resize: vertical; margin-bottom: 10px; }
-
         /* Quiz UI */
         .quiz-status { display: flex; justify-content: space-between; color: #64748b; font-size: 0.9rem; margin-bottom: 20px; }
         .question-box { font-size: 1.4rem; font-weight: bold; text-align: center; margin: 30px 0; word-break: keep-all; }
@@ -41,44 +37,29 @@
 
         /* Helpers */
         .hidden { display: none !important; }
-        
-        #question-list { list-style: none; padding: 0; max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
-        #question-list li { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; font-size: 0.9rem; }
-        .badge { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div id="editor-view">
-        <h1>📝 문제 만들기</h1>
+    <div id="setup-view">
+        <h1>🔗 구글 시트 연결</h1>
+        <p style="text-align:center; color:#64748b; font-size:0.9rem;">시트 공유 설정을 '공개'로 바꾸고, 시트 ID를 입력하세요.</p>
+        <input type="text" id="sheet-id-input" placeholder="여기에 시트 ID를 붙여넣으세요">
+        <button class="btn" onclick="saveSheetId()">✔️ 시트 ID 저장</button>
+        <div id="current-sheet-status" style="margin-top:15px; text-align:center; color:#10b981; font-weight:bold;"></div>
+
+        <h2 style="margin-top:40px;">🔥 퀴즈 시작</h2>
+        <button class="btn" style="background:#10b981;" onclick="loadAndStartQuiz()">데이터 로드 및 암기 시작</button>
         
-        <div class="input-group">
-            <input type="text" id="input-q" placeholder="문제 (예: 사과)" onkeypress="handleEnter(event, 'add')">
-            <input type="text" id="input-a" placeholder="정답 (예: apple)" onkeypress="handleEnter(event, 'add')">
-        </div>
-        <button class="btn btn-outline" style="margin-top:0; margin-bottom:15px;" onclick="addQuestion()">⬇️ 하나 추가하기</button>
-
-        <details>
-            <summary style="cursor:pointer; color:#64748b; margin-bottom:10px;">엑셀/표 붙여넣기 (클릭)</summary>
-            <textarea id="bulk-data" placeholder="문제 [탭] 정답 형식으로 붙여넣으세요."></textarea>
-            <button class="btn" style="background:#10b981;" onclick="loadFromPaste()">📋 표 데이터 추가하기</button>
-        </details>
-
-        <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;">
-            <span>총 <b id="q-count">0</b>문제</span>
-            <button style="background:none; border:none; color:#ef4444; cursor:pointer;" onclick="clearAll()">전체 삭제</button>
-        </div>
-        <ul id="question-list"></ul>
-
-        <button class="btn" onclick="generateLink()">🔗 링크 생성 & 공유</button>
-        
-        <div id="share-section" class="hidden" style="margin-top:15px; background:#f1f5f9; padding:15px; border-radius:8px;">
-            <p style="margin:0 0 5px 0; font-size:0.9rem;">👇 링크가 생성되었습니다!</p>
-            <div id="generated-link" style="word-break:break-all; font-size:0.8rem; margin-bottom:10px; color:#4f46e5;"></div>
-            <button class="btn btn-outline" onclick="copyLink()">링크 복사</button>
-            <button class="btn" onclick="startQuizInit()">🔥 암기 시작하기</button>
-        </div>
+        <p style="margin-top:20px; border-top:1px solid #e2e8f0; padding-top:10px; text-align:center; font-size:0.9rem;">
+            <a href="https://docs.google.com/spreadsheets/d/148tD5R801q1J1nL_Yj2nE-o-T2hE7f8y/edit#gid=0" target="_blank">예시 시트 보기</a>
+        </p>
+    </div>
+    
+    <div id="loading-view" class="hidden" style="text-align:center; margin-top:50px;">
+        <h2 id="loading-message">데이터를 로드하는 중입니다...</h2>
+        <div class="loader" style="margin-top:20px;"></div>
     </div>
 
     <div id="quiz-view" class="hidden">
@@ -115,93 +96,89 @@
     let retryQueue = [];   
     let currentQ = null;   
     let round = 1;
+    let sheetId = '';
+    const STORAGE_KEY = 'SpartaSheetId';
 
-    // --- 1. 초기화 및 데이터 로드 (수정됨) ---
+    // --- 1. 초기화 및 ID 로드 ---
     window.onload = function() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const dataParam = urlParams.get('data');
-        if (dataParam) {
-            try {
-                // 👇👇👇 디코딩 로직을 안정적인 표준 패턴으로 교체 👇👇👇
-                const decoded = decodeURIComponent(escape(atob(dataParam)));
-                // 👆👆👆
-                
-                allQuestions = JSON.parse(decoded); 
-                if(allQuestions.length > 0) startQuizInit();
-            } catch (e) { alert("데이터 로드 실패"); console.error(e); }
+        // 로컬 저장소에서 시트 ID 로드
+        const savedId = localStorage.getItem(STORAGE_KEY);
+        if (savedId) {
+            sheetId = savedId;
+            document.getElementById('sheet-id-input').value = savedId;
+            document.getElementById('current-sheet-status').innerText = '✅ 시트 ID가 저장되었습니다.';
         }
-        updateListUI();
     };
 
+    function saveSheetId() {
+        const id = document.getElementById('sheet-id-input').value.trim();
+        if(!id) return alert("시트 ID를 입력해주세요.");
+        sheetId = id.includes('/d/') ? id.split('/d/')[1].split('/')[0] : id; // 전체 URL이 들어와도 ID만 추출
+        localStorage.setItem(STORAGE_KEY, sheetId);
+        document.getElementById('current-sheet-status').innerText = '✅ 시트 ID가 성공적으로 저장되었습니다.';
+    }
+
+    // --- 2. Sheets 데이터 로드 ---
+    async function loadAndStartQuiz() {
+        if(!sheetId) {
+            alert("시트 ID를 먼저 저장해주세요!");
+            return;
+        }
+
+        // 로딩 화면 표시
+        document.getElementById('setup-view').classList.add('hidden');
+        document.getElementById('loading-view').classList.remove('hidden');
+        document.getElementById('loading-message').innerText = '데이터를 로드하는 중입니다...';
+
+        // Google Sheets API URL (Sheet1의 A열과 B열 데이터)
+        const sheetUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&tq=SELECT%20A%2C%20B`;
+
+        try {
+            const response = await fetch(sheetUrl);
+            const dataText = await response.text();
+            
+            // JSONP 형식의 응답을 JSON 객체로 파싱
+            const jsonText = dataText.substring(dataText.indexOf('{'), dataText.lastIndexOf('}') + 1);
+            const data = JSON.parse(jsonText);
+
+            // 데이터 추출
+            const rows = data.table.rows;
+            allQuestions = [];
+            
+            // 첫 번째 행은 헤더이므로 스킵
+            for (let i = 1; i < rows.length; i++) {
+                const q = rows[i].c[0]?.v; // A열 (문제)
+                const a = rows[i].c[1]?.v; // B열 (정답)
+                
+                if (q && a) {
+                    allQuestions.push({ q: q.toString().trim(), a: a.toString().trim() });
+                }
+            }
+
+            if (allQuestions.length === 0) {
+                throw new Error("시트에서 유효한 문제-정답 쌍을 찾을 수 없습니다. 시트가 비어 있거나 공유 설정이 잘못되었을 수 있습니다.");
+            }
+
+            // 로딩 화면 숨기고 퀴즈 시작
+            document.getElementById('loading-view').classList.add('hidden');
+            startQuizInit();
+
+        } catch (error) {
+            console.error("데이터 로드 실패:", error);
+            document.getElementById('loading-message').innerText = `❌ 데이터 로드 실패: ${error.message}`;
+            document.getElementById('setup-view').classList.remove('hidden');
+            document.getElementById('loading-view').classList.add('hidden');
+            alert("데이터 로드에 실패했습니다. 시트 ID와 '공개 공유 설정'을 다시 확인해주세요.");
+        }
+    }
+
+    // --- 3. 퀴즈 로직 (동일) ---
     function handleEnter(e, type) {
         if(e.key === 'Enter') {
-            if(type === 'add') addQuestion();
             if(type === 'submit') submitAnswer();
         }
     }
 
-    // --- 2. 편집 기능 (추가/삭제) ---
-    function addQuestion() {
-        const q = document.getElementById('input-q').value.trim();
-        const a = document.getElementById('input-a').value.trim();
-        if(!q || !a) return alert("문제와 정답을 모두 입력하세요.");
-        
-        allQuestions.push({ q, a });
-        document.getElementById('input-q').value = '';
-        document.getElementById('input-a').value = '';
-        document.getElementById('input-q').focus();
-        updateListUI();
-    }
-
-    function loadFromPaste() {
-        const text = document.getElementById('bulk-data').value.trim();
-        if(!text) return;
-        const lines = text.split('\n');
-        let count = 0;
-        lines.forEach(line => {
-            let parts = line.split('\t');
-            if(parts.length < 2) parts = line.split(',');
-            if(parts.length >= 2) {
-                allQuestions.push({ q: parts[0].trim(), a: parts[1].trim() });
-                count++;
-            }
-        });
-        alert(`${count}개 추가됨`);
-        document.getElementById('bulk-data').value = '';
-        updateListUI();
-    }
-
-    function updateListUI() {
-        const list = document.getElementById('question-list');
-        list.innerHTML = '';
-        document.getElementById('q-count').innerText = allQuestions.length;
-        allQuestions.forEach((item, idx) => {
-            list.innerHTML += `<li><span>${item.q}</span> <span style="color:#ef4444;cursor:pointer;" onclick="removeQ(${idx})">삭제</span></li>`;
-        });
-    }
-    
-    function removeQ(idx) { allQuestions.splice(idx, 1); updateListUI(); }
-    function clearAll() { allQuestions = []; updateListUI(); }
-
-    // --- 3. 링크 생성 (수정됨) ---
-    function generateLink() {
-        if(allQuestions.length === 0) return alert("문제가 없습니다.");
-        const json = JSON.stringify(allQuestions);
-        
-        // 👇👇👇 인코딩 로직을 안정적인 표준 패턴으로 교체 👇👇👇
-        const encoded = btoa(unescape(encodeURIComponent(json)));
-        // 👆👆👆
-        
-        const url = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
-        document.getElementById('generated-link').innerText = url;
-        document.getElementById('share-section').classList.remove('hidden');
-    }
-    function copyLink() {
-        navigator.clipboard.writeText(document.getElementById('generated-link').innerText);
-        alert("복사완료!");
-    }
-
-    // --- 4. 퀴즈 로직 (핵심) ---
     function startQuizInit() {
         if(allQuestions.length === 0) return alert("데이터 없음");
         
@@ -209,7 +186,7 @@
         retryQueue = [];
         round = 1;
 
-        document.getElementById('editor-view').classList.add('hidden');
+        document.getElementById('setup-view').classList.add('hidden');
         document.getElementById('quiz-view').classList.remove('hidden');
         
         loadNextQuestion();
@@ -295,6 +272,5 @@
         loadNextQuestion();
     }
 </script>
-
 </body>
 </html>
