@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스파르타 암기장 (최종)</title>
+    <style>
+        /* 변수 설정 */
+        :root { --primary: #4f46e5; --bg: #f8fafc; --card: #ffffff; --text: #334155; --success: #22c55e; --error: #ef4444; }
+        
+        /* 기본 스타일 및 모바일 반응형 */
+        body { font-family: 'Pretendard', sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .container { width: 100%; max-width: 600px; background: var(--card); padding: 2rem; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        h1, h2 { text-align: center; color: #1e293b; margin-bottom: 10px; }
+        
+        /* Inputs & Buttons */
+        .input-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        input, textarea { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
+        .btn { display: block; width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: bold; margin-top: 10px; transition: 0.2s; }
+        .btn:hover { opacity: 0.9; }
+        .btn-outline { background: transparent; border: 2px solid var(--primary); color: var(--primary); margin-top: 5px; }
+        
+        /* Bulk Paste */
+        textarea { height: 100px; font-family: monospace; resize: vertical; margin-bottom: 10px; }
+
+        /* Quiz UI */
+        .quiz-status { display: flex; justify-content: space-between; color: #64748b; font-size: 0.9rem; margin-bottom: 20px; }
+        .question-box { font-size: 1.4rem; font-weight: bold; text-align: center; margin: 30px 0; word-break: keep-all; }
+        
+        /* 👇👇👇 핵심 수정 부분 1: 피드백 박스 기본 display:none 속성 제거 👇👇👇 */
+        .feedback-area { 
+            margin-top: 20px; 
+            padding: 15px; 
+            border-radius: 8px; 
+            text-align: center; 
+            min-height: 50px; /* 공간 확보 */
+        }
+        /* 👆👆👆 */
+        
+        .feedback-area.correct { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+        .feedback-area.wrong { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        .correct-answer-display { font-weight: bold; font-size: 1.1rem; margin-top: 5px; }
+
+        /* Helpers */
+        /* 👇👇👇 핵심 수정 부분 2: hidden 클래스를 가장 강력하게 정의 👇👇👇 */
+        .hidden { display: none !important; }
+        /* 👆👆👆 */
+        
+        #question-list { list-style: none; padding: 0; max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+        #question-list li { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; font-size: 0.9rem; }
+        .badge { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="editor-view">
+        <h1>📝 문제 만들기</h1>
+        
+        <div class="input-group">
+            <input type="text" id="input-q" placeholder="문제 (예: 사과)" onkeypress="handleEnter(event, 'add')">
+            <input type="text" id="input-a" placeholder="정답 (예: apple)" onkeypress="handleEnter(event, 'add')">
+        </div>
+        <button class="btn btn-outline" style="margin-top:0; margin-bottom:15px;" onclick="addQuestion()">⬇️ 하나 추가하기</button>
+
+        <details>
+            <summary style="cursor:pointer; color:#64748b; margin-bottom:10px;">엑셀/표 붙여넣기 (클릭)</summary>
+            <textarea id="bulk-data" placeholder="문제 [탭] 정답 형식으로 붙여넣으세요."></textarea>
+            <button class="btn" style="background:#10b981;" onclick="loadFromPaste()">📋 표 데이터 추가하기</button>
+        </details>
+
+        <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;">
+            <span>총 <b id="q-count">0</b>문제</span>
+            <button style="background:none; border:none; color:#ef4444; cursor:pointer;" onclick="clearAll()">전체 삭제</button>
+        </div>
+        <ul id="question-list"></ul>
+
+        <button class="btn" onclick="generateLink()">🔗 링크 생성 & 공유</button>
+        
+        <div id="share-section" class="hidden" style="margin-top:15px; background:#f1f5f9; padding:15px; border-radius:8px;">
+            <p style="margin:0 0 5px 0; font-size:0.9rem;">👇 링크가 생성되었습니다!</p>
+            <div id="generated-link" style="word-break:break-all; font-size:0.8rem; margin-bottom:10px; color:#4f46e5;"></div>
+            <button class="btn btn-outline" onclick="copyLink()">링크 복사</button>
+            <button class="btn" onclick="startQuizInit()">🔥 암기 시작하기</button>
+        </div>
+    </div>
+
+    <div id="quiz-view" class="hidden">
+        <div class="quiz-status">
+            <span>남은 문제: <b id="remain-count">0</b></span>
+            <span class="badge" id="round-badge">1라운드</span>
+        </div>
+
+        <div class="question-box" id="question-display"></div>
+
+        <input type="text" id="quiz-input" placeholder="정답을 입력하세요" autocomplete="off" onkeypress="handleEnter(event, 'submit')">
+        
+        <button class="btn" id="btn-submit" onclick="submitAnswer()">제출</button>
+        <button class="btn hidden" id="btn-next" onclick="nextQuestion()">다음 문제 ➡️</button>
+
+        <div id="feedback" class="feedback-area hidden">
+            <div id="feedback-msg"></div>
+            <div id="correct-answer-show" class="correct-answer-display"></div>
+        </div>
+    </div>
+
+    <div id="finish-view" class="hidden" style="text-align:center;">
+        <h1 style="font-size:3rem; margin-bottom:0;">🎉</h1>
+        <h2>완벽하게 암기했습니다!</h2>
+        <p>틀린 문제 없이 모든 과정을 통과하셨습니다.</p>
+        <button class="btn" onclick="location.reload()">처음으로 돌아가기</button>
+    </div>
+</div>
+
+<script>
+    // 데이터 저장소
+    let allQuestions = []; 
+    let quizQueue = [];    
+    let retryQueue = [];   
+    let currentQ = null;   
+    let round = 1;
+
+    // --- 1. 초기화 및 데이터 로드 ---
+    window.onload = function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const dataParam = urlParams.get('data');
+        if (dataParam) {
+            try {
+                const decoded = decodeURIComponent(atob(dataParam).split('').map(c => 
+                    '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+                allQuestions = JSON.parse(decoded);
+                if(allQuestions.length > 0) startQuizInit();
+            } catch (e) { alert("데이터 로드 실패"); }
+        }
+        updateListUI();
+    };
+
+    function handleEnter(e, type) {
+        if(e.key === 'Enter') {
+            if(type === 'add') addQuestion();
+            if(type === 'submit') submitAnswer();
+        }
+    }
+
+    // --- 2. 편집 기능 (추가/삭제) ---
+    function addQuestion() {
+        const q = document.getElementById('input-q').value.trim();
+        const a = document.getElementById('input-a').value.trim();
+        if(!q || !a) return alert("문제와 정답을 모두 입력하세요.");
+        
+        allQuestions.push({ q, a });
+        document.getElementById('input-q').value = '';
+        document.getElementById('input-a').value = '';
+        document.getElementById('input-q').focus();
+        updateListUI();
+    }
+
+    function loadFromPaste() {
+        const text = document.getElementById('bulk-data').value.trim();
+        if(!text) return;
+        const lines = text.split('\n');
+        let count = 0;
+        lines.forEach(line => {
+            let parts = line.split('\t');
+            if(parts.length < 2) parts = line.split(',');
+            if(parts.length >= 2) {
+                allQuestions.push({ q: parts[0].trim(), a: parts[1].trim() });
+                count++;
+            }
+        });
+        alert(`${count}개 추가됨`);
+        document.getElementById('bulk-data').value = '';
+        updateListUI();
+    }
+
+    function updateListUI() {
+        const list = document.getElementById('question-list');
+        list.innerHTML = '';
+        document.getElementById('q-count').innerText = allQuestions.length;
+        allQuestions.forEach((item, idx) => {
+            list.innerHTML += `<li><span>${item.q}</span> <span style="color:#ef4444;cursor:pointer;" onclick="removeQ(${idx})">삭제</span></li>`;
+        });
+    }
+    
+    function removeQ(idx) { allQuestions.splice(idx, 1); updateListUI(); }
+    function clearAll() { allQuestions = []; updateListUI(); }
+
+    // --- 3. 링크 생성 ---
+    function generateLink() {
+        if(allQuestions.length === 0) return alert("문제가 없습니다.");
+        const json = JSON.stringify(allQuestions);
+        const encoded = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+        const url = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
+        document.getElementById('generated-link').innerText = url;
+        document.getElementById('share-section').classList.remove('hidden');
+    }
+    function copyLink() {
+        navigator.clipboard.writeText(document.getElementById('generated-link').innerText);
+        alert("복사완료!");
+    }
+
+    // --- 4. 퀴즈 로직 (핵심) ---
+    function startQuizInit() {
+        if(allQuestions.length === 0) return alert("데이터 없음");
+        
+        quizQueue = [...allQuestions]; 
+        retryQueue = [];
+        round = 1;
+
+        document.getElementById('editor-view').classList.add('hidden');
+        document.getElementById('quiz-view').classList.remove('hidden');
+        
+        loadNextQuestion();
+    }
+
+    function loadNextQuestion() {
+        // 큐가 비었으면 라운드 체크
+        if(quizQueue.length === 0) {
+            if(retryQueue.length === 0) {
+                // 완전 종료
+                document.getElementById('quiz-view').classList.add('hidden');
+                document.getElementById('finish-view').classList.remove('hidden');
+                return;
+            } else {
+                // 다음 라운드 시작 (틀린 문제만 다시)
+                quizQueue = [...retryQueue];
+                retryQueue = [];
+                round++;
+                alert(`🔄 ${round}라운드 시작! 틀린 문제만 다시 풉니다.`);
+            }
+        }
+
+        // 문제 로드
+        currentQ = quizQueue.shift(); 
+        
+        // UI 업데이트
+        document.getElementById('round-badge').innerText = round + "라운드";
+        document.getElementById('remain-count').innerText = quizQueue.length + 1;
+        document.getElementById('question-display').innerText = currentQ.q;
+        
+        // 입력창 초기화
+        const input = document.getElementById('quiz-input');
+        input.value = '';
+        input.disabled = false;
+        input.focus();
+        
+        // 버튼 및 피드백 상태 초기화
+        document.getElementById('btn-submit').classList.remove('hidden');
+        document.getElementById('btn-next').classList.add('hidden');
+        document.getElementById('feedback').classList.add('hidden'); // hidden 클래스를 다시 적용
+        document.getElementById('feedback').className = 'feedback-area hidden'; // 클래스 초기화
+    }
+
+    function submitAnswer() {
+        const input = document.getElementById('quiz-input');
+        const userAns = input.value.trim();
+        const correctAns = currentQ.a.trim();
+        
+        if(!userAns) return; 
+
+        input.disabled = true;
+
+        const feedback = document.getElementById('feedback');
+        const feedbackMsg = document.getElementById('feedback-msg');
+        const correctShow = document.getElementById('correct-answer-show');
+        
+        // 피드백 박스 스타일 초기화 (wrong/correct 클래스 제거)
+        feedback.classList.remove('wrong', 'correct'); 
+
+        // 정답 비교 (대소문자 무시)
+        if(userAns.toLowerCase() === correctAns.toLowerCase()) {
+            // 정답
+            feedback.classList.add('correct');
+            feedbackMsg.innerText = "🙆‍♂️ 정답입니다!";
+            correctShow.innerText = ""; 
+        } else {
+            // 오답
+            feedback.classList.add('wrong');
+            feedbackMsg.innerText = "🙅‍♂️ 틀렸습니다.";
+            correctShow.innerText = `정답: ${currentQ.a}`;
+            
+            // 틀린 문제는 재시도 큐에 추가
+            retryQueue.push(currentQ);
+        }
+        
+        // UI 업데이트 (버튼 전환 및 피드백 박스 보이게 하기)
+        document.getElementById('btn-submit').classList.add('hidden');
+        document.getElementById('btn-next').classList.remove('hidden');
+        document.getElementById('btn-next').focus();
+        feedback.classList.remove('hidden'); // 피드백 박스를 보이게 함
+    }
+
+    function nextQuestion() {
+        loadNextQuestion();
+    }
+</script>
+
+</body>
+</html>
